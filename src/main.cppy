@@ -1,0 +1,136 @@
+VOID EnsureParentDirs(C8* path)
+        for (UW i = 0; path[i] != '\0'; i += 1)
+                if (path[i] == '/')
+                        C8 save = path[i]
+                        path[i] = '\0'
+                        if (strlen(path) > 0 && mkdir(path, 0777) != 0 && errno != EEXIST)
+                                throw ERROR(CSTR, "failed to create output directory")
+                        path[i] = save
+
+BOOL HEADER_ONLY = FALSE
+
+VOID EmitPhase(DSTR& bundle, DARR<PARSED_FILE>& files, const C8* name, VOID (*emit)(DSTR&, NODE&))
+        bundle += "\n// "
+        bundle += name
+        bundle += "\n"
+        for (PARSED_FILE& file : files)
+                emit(bundle, file.root)
+
+int main(int argc, C8** argv)
+        try
+                DARR<C8*> inputs = {}
+                DARR<STRV> headers = {}
+                DARR<PARSED_FILE> files = {}
+                C8* output = (C8*)"bundle.cpp"
+                BOOL outputFound = FALSE
+
+                for (int i = 1; i < argc; i += 1)
+                        if (strcmp(argv[i], "-o") == 0)
+                                if (i + 1 >= argc)
+                                        throw ERROR(CSTR, "expected a file name after -o")
+                                if (outputFound)
+                                        throw ERROR(CSTR, "-o already provided")
+
+                                output = argv[i + 1]
+                                outputFound = TRUE
+                                i += 1
+                                continue
+
+                        if (strcmp(argv[i], "--header") == 0)
+                                HEADER_ONLY = TRUE
+                                continue
+
+                        if (STRV{argv[i], strlen(argv[i])}.StartsWith("-H"))
+                                if (strlen(argv[i]) <= 2)
+                                        throw ERROR(CSTR, "expected a header name after -H")
+
+                                headers.PushR() = {argv[i], strlen(argv[i])}
+                                headers.Last().ShrinkLeft(2)
+                                continue
+
+                        inputs.PushR() = argv[i]
+
+                if (HEADER_ONLY)
+                        if (!outputFound)
+                                output = (C8*)"bundle.hpp"
+                        else if (!STRV{output, strlen(output)}.EndsWith(".hpp"))
+                                throw ERROR(CSTR, "expected a .hpp extension for -o in header mode")
+                else if (outputFound && !STRV{output, strlen(output)}.EndsWith(".cpp"))
+                        throw ERROR(CSTR, "expected a .cpp extension for -o")
+
+                if (inputs.len == 0)
+                        throw ERROR(CSTR, "expected at least one input file")
+
+                for (C8* input : inputs)
+                        PARSED_FILE& parsed = files.PushR()
+                        parsed.filename = input
+                        FILE* file = fopen(input, "rb")
+                        if (file == NULL)
+                                throw ERROR(DSTR, DstrHeap("failed to open input file: ", input))
+
+                        if (fseek(file, 0, SEEK_END) != 0)
+                                fclose(file)
+                                throw ERROR(CSTR, "failed to read an input file")
+
+                        long end = ftell(file)
+                        if (end < 0 || fseek(file, 0, SEEK_SET) != 0)
+                                fclose(file)
+                                throw ERROR(CSTR, "failed to read an input file")
+
+                        if (end > 0)
+                                parsed.content.Reserve((UW)end)
+                                if (fread(parsed.content.data + parsed.content.len, 1, (UW)end, file) != (UW)end)
+                                        fclose(file)
+                                        throw ERROR(CSTR, "failed to read an input file")
+                                parsed.content.len += (UW)end
+
+                        fclose(file)
+                DSTR bundle = {}
+                for (STRV header : headers)
+                        bundle += "#include \""
+                        bundle += header
+                        bundle += "\"\n"
+                for (PARSED_FILE& file : files)
+                        file.root = Parse(file.content, file.filename)
+                EmitPhase(bundle, files, "EmitRootPreprocessor", EmitRootPreprocessor)
+                EmitPhase(bundle, files, "EmitClassForwardReferences", EmitClassForwardReferences)
+                EmitPhase(bundle, files, "EmitEnums", EmitEnums)
+                EmitPhase(bundle, files, "EmitFunctionSignatures", EmitFunctionSignatures)
+
+                /*
+                    Classes are the one phase that cannot run per file: they
+                    are ordered by dependency, and the dependencies cross
+                    file boundaries.
+                */
+                bundle += "\n// EmitClassDeclarations\n"
+                NODE mergedRoot = {}
+                mergedRoot.kind = NODE_KIND::ROOT
+                for (PARSED_FILE& file : files)
+                        for (NODE* child : file.root.children)
+                                mergedRoot.children.PushR() = child
+                MergeDeclBlocks(mergedRoot)
+                EmitClassDeclarations(bundle, mergedRoot)
+
+                EmitPhase(bundle, files, "EmitRootStatements", EmitRootStatements)
+                EmitPhase(bundle, files, "EmitFunctions", EmitFunctions)
+                EmitPhase(bundle, files, "EmitClassMethods", EmitClassMethods)
+
+                EnsureParentDirs(output)
+                FILE* outputFile = fopen(output, "wb")
+                if (outputFile == NULL)
+                        throw ERROR(CSTR, "failed to open output file")
+
+                if (bundle.len > 0 && fwrite(bundle.data, 1, bundle.len, outputFile) != bundle.len)
+                        fclose(outputFile)
+                        throw ERROR(CSTR, "failed to write output file")
+
+                fclose(outputFile)
+                return 0
+        catch (ERROR& error)
+                switch (error.type)
+                        case ERROR_TYPE::PARSE:
+                                PARSE_ERROR* parseError = (PARSE_ERROR*)error.data
+                                fprintf(stderr, "Parse error in %s on line %zu: %s.\n", parseError->filename, (size_t)parseError->line, parseError->message)
+                                free(parseError)
+                        HANDLE_COMMON_ERRORS
+                return 1

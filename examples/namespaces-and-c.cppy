@@ -1,0 +1,35 @@
+/*
+    Namespaces and extern "C" blocks are scopes like any other: indent
+    into them. They may only appear at root or nested in each other.
+
+    Inside geometry, Length calls Distance and reads ORIGIN, both declared
+    after it. The ordering rules apply inside a namespace too.
+*/
+
+namespace geometry
+        struct POINT
+                F64 x
+                F64 y
+
+                F64 Length()
+                        return Distance(*this, ORIGIN)
+
+        POINT ORIGIN = {0.0, 0.0}
+
+        F64 Distance(POINT a, POINT b)
+                F64 dx = a.x - b.x
+                F64 dy = a.y - b.y
+                return sqrt(dx * dx + dy * dy)
+
+// Unmangled symbols, to hand to a C caller, a dlsym, or an FFI.
+extern "C"
+        int cppy_add(int a, int b)
+                return a + b
+
+int main()
+        geometry::POINT point = {3.0, 4.0}
+        printf("POINT{3, 4}.Length()          = %.1f\n", point.Length())
+        printf("Distance(POINT{3, 4}, {0, 3}) = %.1f\n",
+                geometry::Distance(point, geometry::POINT{0.0, 3.0}))
+        printf("cppy_add(2, 3)                = %d\n", cppy_add(2, 3))
+        return 0

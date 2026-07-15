@@ -1,0 +1,52 @@
+/*
+    MAP is keyed by U64, not by string. That is deliberate: you pick the
+    hash, so the map never hashes anything behind your back. Hash64 is an
+    FNV-1a builder that takes anything you can feed it.
+*/
+
+enum class ERROR_TYPE
+        COMMON_ERROR_TYPES
+
+U64 NameKey(const C8* name)
+        return Hash64(Strv(name)).value
+
+int main()
+        try
+                MAP<UW> ages = {}
+                ages.SetR(NameKey("ada")) = 36
+                ages.SetR(NameKey("alan")) = 41
+                ages.SetR(NameKey("grace")) = 45
+
+                printf("ada is %zu\n", (size_t)ages.Get(NameKey("ada")))
+                printf("has hopper? %s\n", ages.Has(NameKey("hopper")) ? "yes" : "no")
+
+                ages.Remove(NameKey("alan"))
+                printf("after removing alan: len=%zu, has alan? %s\n",
+                        (size_t)ages.len,
+                        ages.Has(NameKey("alan")) ? "yes" : "no")
+                ages.Free()
+
+                /*
+                    SET stores the keys themselves, so adding twice is a
+                    no-op rather than an error.
+                */
+                SET<U64> seen = {}
+                seen.Add(7)
+                seen.Add(7)
+                seen.Add(9)
+                printf("set: len=%zu has(9)=%s has(8)=%s\n",
+                        (size_t)seen.len,
+                        seen.Has(9) ? "yes" : "no",
+                        seen.Has(8) ? "yes" : "no")
+                seen.Free()
+
+                // Hash64 folds a whole argument list into one value.
+                printf("hash(\"cppy\")      = 0x%016llx\n",
+                        (unsigned long long)Hash64(Strv("cppy")).value)
+                printf("hash(\"cppy\", 1u)  = 0x%016llx\n",
+                        (unsigned long long)Hash64(Strv("cppy"), (UW)1).value)
+                return 0
+        catch (ERROR& error)
+                switch (error.type)
+                        HANDLE_COMMON_ERRORS
+                return 1

@@ -1,0 +1,129 @@
+struct STRV
+        C8* start
+        UW len
+
+        C8& operator[](UW i)
+                return start[i]
+
+        C8* begin()
+                return start
+
+        C8* end()
+                return start + len
+
+        BOOL operator==(STRV s)
+                if (len != s.len)
+                        return FALSE
+                return memcmp(start, s.start, len) == 0
+
+        BOOL operator==(const C8* s)
+                UW slen = (UW)strlen(s)
+                if (slen != len)
+                        return FALSE
+                return memcmp(start, s, slen) == 0
+
+        BOOL operator!=(STRV s)
+                return !(*this == s)
+
+        BOOL operator!=(const C8* s)
+                return !(*this == s)
+
+        BOOL StartsWith(const C8* s)
+                UW slen = (UW)strlen(s)
+                if (slen > len)
+                        return FALSE
+                return memcmp(start, s, slen) == 0
+
+        BOOL EndsWith(const C8* s)
+                UW slen = (UW)strlen(s)
+                if (slen > len)
+                        return FALSE
+                return memcmp(start + len - slen, s, slen) == 0
+
+        VOID TrimLeft()
+                while (len > 0 && (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n'))
+                        start += 1
+                        len -= 1
+
+        VOID TrimRight()
+                while (len > 0 && (start[len - 1] == ' ' || start[len - 1] == '\t' || start[len - 1] == '\r' || start[len - 1] == '\n'))
+                        len -= 1
+
+        VOID Trim()
+                TrimLeft()
+                TrimRight()
+
+        template <typename N>
+        VOID ShrinkLeft(N n)
+                start += n
+                len -= n
+
+        template <typename N>
+        VOID ShrinkRight(N n)
+                len -= n
+
+        DARR<STRV> Lines()
+                DARR<STRV> out = {}
+                UW from = 0
+                for (UW i = 0; i < len; i += 1)
+                        if (start[i] == '\n')
+                                STRV& s = out.PushR()
+                                s.start = start + from
+                                s.len = i - from
+                                if (s.len > 0 && s.start[s.len - 1] == '\r')
+                                        s.len -= 1
+                                from = i + 1
+                STRV& tail = out.PushR()
+                tail.start = start + from
+                tail.len = len - from
+                if (tail.len > 0 && tail.start[tail.len - 1] == '\r')
+                        tail.len -= 1
+                return out
+
+        IW Find(C8 c)
+                for (UW i = 0; i < len; i += 1)
+                        if (start[i] == c)
+                                return (IW)i
+                return -1
+
+        IW Find(const C8* s)
+                UW slen = (UW)strlen(s)
+                if (slen == 0 || slen > len)
+                        return -1
+                for (UW i = 0; i + slen <= len; i += 1)
+                        if (memcmp(start + i, s, slen) == 0)
+                                return (IW)i
+                return -1
+
+        DARR<STRV> Split(const C8* sep)
+                DARR<STRV> out = {}
+                UW slen = (UW)strlen(sep)
+                UW from = 0
+                UW i = 0
+                while (slen > 0 && i + slen <= len)
+                        if (memcmp(start + i, sep, slen) == 0)
+                                STRV& piece = out.PushR()
+                                piece.start = start + from
+                                piece.len = i - from
+                                i += slen
+                                from = i
+                        else
+                                i += 1
+                STRV& tail = out.PushR()
+                tail.start = start + from
+                tail.len = len - from
+                return out
+
+BOOL IsSpace(C8 c)
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
+STRV Strv(const C8* s)
+        return {(C8*)s, (UW)strlen(s)}
+
+STRV* StrvHeap(const C8* s)
+        STRV* sv = (STRV*)calloc(1, sizeof(STRV))
+        if (sv == NULL)
+                throw ERROR(CSTR, "out of memory")
+        sv->start = (C8*)s
+        sv->len = (UW)strlen(s)
+        return sv

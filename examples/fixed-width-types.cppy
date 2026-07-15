@@ -1,0 +1,28 @@
+/*
+    Every bundle starts with a prelude of exact-width types, so there is
+    no <cstdint> to include and no `unsigned long long` to squint at.
+    UW and IW are the pointer-sized pair; BOOL is a U8 with TRUE and
+    FALSE.
+*/
+
+int main()
+        U8 byte = 255
+        U16 port = 8080
+        U32 color = 0xDEADBEEF
+        U64 huge = 18446744073709551615ULL
+        I32 delta = -42
+        F32 ratio = 0.5f
+        F64 pi = 3.141592653589793
+        C8 grade = 'A'
+        BOOL ok = TRUE
+        UW wordSize = sizeof(UW)
+
+        printf("U8  = %u (%zu byte)\n", (unsigned)byte, sizeof(U8))
+        printf("U16 = %u (%zu bytes)\n", (unsigned)port, sizeof(U16))
+        printf("U32 = 0x%X (%zu bytes)\n", (unsigned)color, sizeof(U32))
+        printf("U64 = %llu (%zu bytes)\n", (unsigned long long)huge, sizeof(U64))
+        printf("I32 = %d (%zu bytes)\n", (int)delta, sizeof(I32))
+        printf("F32 = %.1f, F64 = %.15f\n", (double)ratio, pi)
+        printf("C8  = %c, BOOL = %u\n", grade, (unsigned)ok)
+        printf("UW  = %zu bytes (pointer-sized)\n", wordSize)
+        return 0

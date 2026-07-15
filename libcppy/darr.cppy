@@ -1,0 +1,73 @@
+template <typename T>
+struct DARR
+        T* data
+        UW len
+        UW cap
+
+        T* begin()
+                return data
+
+        T* end()
+                return data + len
+
+        T& operator[](UW i)
+                return data[i]
+
+        VOID Reserve(UW extra)
+                if (len + extra <= cap)
+                        return
+                UW newCap = cap == 0 ? 8 : cap * 2
+                while (newCap < len + extra)
+                        newCap *= 2
+                T* newData = (T*)realloc(data, newCap * sizeof(T))
+                if (newData == NULL)
+                        throw ERROR(CSTR, "out of memory")
+                data = newData
+                cap = newCap
+
+        T& PushR()
+                Reserve(1)
+                T& slot = data[len]
+                memset(&slot, 0, sizeof(T))
+                len += 1
+                return slot
+
+        VOID Pop()
+                len -= 1
+
+        T& Last()
+                return data[len - 1]
+
+        DARR<T> Copy()
+                DARR<T> d = {}
+                d.Reserve(len)
+                memcpy(d.data, data, len * sizeof(T))
+                d.len = len
+                return d
+
+        VOID Remove(UW i)
+                for (UW j = i; j + 1 < len; j += 1)
+                        data[j] = data[j + 1]
+                len -= 1
+
+        VOID Reset()
+                data = NULL
+                len = 0
+                cap = 0
+
+        VOID Free()
+                free(data)
+
+template <typename T, typename... ARGS>
+DARR<T> Darr(ARGS... args)
+        DARR<T> d = {}
+        ((d.PushR() = args), ...)
+        return d
+
+template <typename T, typename... ARGS>
+DARR<T>* DarrHeap(ARGS... args)
+        DARR<T>* d = (DARR<T>*)calloc(1, sizeof(DARR<T>))
+        if (d == NULL)
+                throw ERROR(CSTR, "out of memory")
+        ((d->PushR() = args), ...)
+        return d

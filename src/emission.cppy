@@ -1,0 +1,451 @@
+UW SkipSpaces(STRV line, UW i)
+        while (i < line.len && line[i] == ' ')
+                i += 1
+        return i
+
+BOOL ConsumeWord(STRV line, UW& i, const C8* word)
+        UW len = (UW)strlen(word)
+        if (!(i + len <= line.len && memcmp(line.start + i, word, len) == 0))
+                return FALSE
+        if (i + len < line.len && IsIdentChar(line[i + len]))
+                return FALSE
+        i += len
+        return TRUE
+
+BOOL StatementNeedsCompleteType(STRV line, STRV typeName)
+        if (typeName.len == 0)
+                return FALSE
+        line.TrimLeft()
+        UW i = 0
+        while (TRUE)
+                UW next = i
+                if (ConsumeWord(line, next, "const") || ConsumeWord(line, next, "volatile") || ConsumeWord(line, next, "static") || ConsumeWord(line, next, "mutable") || ConsumeWord(line, next, "typename"))
+                        i = SkipSpaces(line, next)
+                else
+                        break
+
+        UW next = i
+        if (ConsumeWord(line, next, "struct") || ConsumeWord(line, next, "class") || ConsumeWord(line, next, "union") || ConsumeWord(line, next, "enum"))
+                i = SkipSpaces(line, next)
+
+        if (!(i + typeName.len <= line.len && memcmp(line.start + i, typeName.start, typeName.len) == 0))
+                return FALSE
+        if (i + typeName.len < line.len && IsIdentChar(line[i + typeName.len]))
+                return FALSE
+        i += typeName.len
+        i = SkipSpaces(line, i)
+
+        if (i < line.len && line[i] == '<')
+                IW depth = 1
+                i += 1
+                while (i < line.len && depth > 0)
+                        if (line[i] == '<')
+                                depth += 1
+                        else if (line[i] == '>')
+                                depth -= 1
+                        i += 1
+                i = SkipSpaces(line, i)
+
+        return !(i < line.len && (line[i] == '*' || line[i] == '&'))
+
+BOOL ClassSignatureNeedsCompleteType(STRV line, STRV typeName)
+        STRV classLine = GetClassSignatureLine(line)
+        classLine.TrimLeft()
+
+        UW colon = 0
+        while (colon < classLine.len && classLine[colon] != ':')
+                colon += 1
+        if (colon == classLine.len)
+                return FALSE
+
+        STRV bases = classLine
+        bases.ShrinkLeft(colon + 1)
+        bases.TrimLeft()
+
+        while (bases.len != 0)
+                STRV base = bases
+                UW split = 0
+                while (split < base.len && base[split] != ',')
+                        split += 1
+                base.ShrinkRight(base.len - split)
+                base.Trim()
+
+                UW i = 0
+                while (TRUE)
+                        UW next = i
+                        if (ConsumeWord(base, next, "public") || ConsumeWord(base, next, "private") || ConsumeWord(base, next, "protected") || ConsumeWord(base, next, "virtual"))
+                                i = SkipSpaces(base, next)
+                        else
+                                break
+
+                STRV type = base
+                type.ShrinkLeft(i)
+                if (StatementNeedsCompleteType(type, typeName))
+                        return TRUE
+
+                if (split == bases.len)
+                        break
+                bases.ShrinkLeft(split + 1)
+                bases.TrimLeft()
+
+        return FALSE
+
+BOOL NodeNeedsCompleteType(NODE& node, STRV dependencyName)
+        if (StatementNeedsCompleteType(node.content, dependencyName))
+                return TRUE
+        if (node.kind == NODE_KIND::CLASS && ClassSignatureNeedsCompleteType(node.content, dependencyName))
+                return TRUE
+        for (NODE* child : node.children)
+                if (child->kind == NODE_KIND::STATEMENT && StatementNeedsCompleteType(child->content, dependencyName))
+                        return TRUE
+                else if (child->kind == NODE_KIND::CLASS && NodeNeedsCompleteType(*child, dependencyName))
+                        return TRUE
+        return FALSE
+
+VOID EmitIndent(DSTR& bundle, UW indent)
+        for (UW i = 0; i < indent; i += 1)
+                bundle += ' '
+
+VOID EmitStmtList(DSTR& bundle, NODE& root)
+        for (UW i = 0; i < root.children.len; i += 1)
+                NODE* child = root.children[i]
+                if (child->kind == NODE_KIND::CONTROL_BLOCK)
+                        bundle += child->content
+                        bundle += '\n'
+                        EmitIndent(bundle, child->indent)
+                        bundle += "{\n"
+                        EmitStmtList(bundle, *child)
+                        EmitIndent(bundle, child->indent)
+                        bundle += "}\n"
+                else if (child->kind == NODE_KIND::BLOCK)
+                        EmitIndent(bundle, child->indent)
+                        bundle += "{\n"
+                        EmitStmtList(bundle, *child)
+                        if (i > 0)
+                                NODE* prev = root.children[i - 1]
+                                if (prev->kind == NODE_KIND::STATEMENT)
+                                        STRV prevLine = prev->content
+                                        prevLine.TrimLeft()
+                                        if (prevLine.StartsWith("case ") || prevLine == "default")
+                                                EmitIndent(bundle, child->indent + 8)
+                                                bundle += "break;\n"
+                        EmitIndent(bundle, child->indent)
+                        bundle += "}\n"
+                else if (child->kind == NODE_KIND::PREPROCESSOR)
+                        bundle += child->content
+                        bundle += '\n'
+                else
+                        bundle += child->content
+                        bundle += ";\n"
+
+VOID EmitClassMethodSignature(DSTR& bundle, NODE& root, NODE& child)
+        STRV classTemplateLine = GetTemplateLine(root.content)
+        if (classTemplateLine.len > 0)
+                classTemplateLine.TrimLeft()
+                bundle += classTemplateLine
+                bundle += '\n'
+
+        STRV methodTemplateLine = GetTemplateLine(child.content)
+        if (methodTemplateLine.len > 0)
+                methodTemplateLine.TrimLeft()
+                bundle += methodTemplateLine
+                bundle += '\n'
+
+        STRV methodLine = GetSignatureLine(child.content)
+        methodLine.TrimLeft()
+        if (methodLine.StartsWith("static "))
+                methodLine.ShrinkLeft(7)
+        UW paren = 0
+        while (paren < methodLine.len && methodLine[paren] != '(')
+                paren += 1
+
+        UW start = paren
+        while (start > 0 && methodLine[start - 1] != ' ')
+                start -= 1
+
+        STRV head = methodLine
+        head.ShrinkRight(head.len - start)
+        if (HEADER_ONLY)
+                bundle += "inline "
+        bundle += head
+
+        STRV classLine = GetClassSignatureLine(root.content)
+        classLine.TrimLeft()
+        STRV className = GetTypeName(classLine)
+        bundle += className
+
+        if (classTemplateLine.len > 0)
+                DSTR args = GetTemplateArgs(classTemplateLine)
+                bundle += args
+                args.Free()
+
+        bundle += "::"
+        STRV tail = methodLine
+        tail.ShrinkLeft(start)
+        bundle += tail
+
+VOID EmitDeclBlock(DSTR& bundle, NODE& child, VOID (*emit)(DSTR&, NODE&))
+        bundle += child.content
+        bundle += '\n'
+        bundle += "{\n"
+        emit(bundle, child)
+        bundle += "}\n"
+
+VOID EmitClassForwardReferences(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitClassForwardReferences)
+                else if (child->kind == NODE_KIND::CLASS)
+                        STRV templateLine = GetTemplateLine(child->content)
+                        if (templateLine.len > 0)
+                                templateLine.TrimLeft()
+                                bundle += templateLine
+                                bundle += '\n'
+                        STRV classLine = GetClassSignatureLine(child->content)
+                        classLine.TrimLeft()
+                        if (classLine.StartsWith("struct"))
+                                bundle += "struct "
+                        else if (classLine.StartsWith("class"))
+                                bundle += "class "
+                        else if (classLine.StartsWith("union"))
+                                bundle += "union "
+                        else
+                                throw ERROR(CSTR, "failed to emit class forward declaration")
+                        STRV className = GetTypeName(classLine)
+                        bundle += className
+                        bundle += ";\n"
+
+VOID EmitEnums(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitEnums)
+                else if (child->kind == NODE_KIND::ENUM)
+                        bundle += child->content
+                        bundle += '\n'
+                        bundle += "{\n"
+                        for (NODE* child2 : child->children)
+                                bundle += child2->content
+                                bundle += ",\n"
+                        bundle += "};\n"
+
+VOID EmitFunctionSignatures(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitFunctionSignatures)
+                else if (child->kind == NODE_KIND::FUNCTION)
+                        bundle += child->content
+                        bundle += ";\n"
+
+VOID EmitOrderedClasses(DSTR& bundle, NODE& root)
+        DARR<PENDING_CLASS> classes = {}
+
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::CLASS)
+                        STRV classLine = GetClassSignatureLine(child->content)
+                        classLine.TrimLeft()
+                        PENDING_CLASS& pending = classes.PushR()
+                        pending.node = child
+                        pending.name = GetTypeName(classLine)
+                        pending.emitted = FALSE
+
+        UW remaining = classes.len
+        while (remaining > 0)
+                BOOL progress = FALSE
+                for (UW i = 0; i < classes.len; i += 1)
+                        if (!classes[i].emitted)
+                                BOOL blocked = FALSE
+                                for (UW j = 0; j < classes.len; j += 1)
+                                        if (i != j && !classes[j].emitted && NodeNeedsCompleteType(*classes[i].node, classes[j].name))
+                                                blocked = TRUE
+
+                                if (!blocked)
+                                        NODE& child = *classes[i].node
+                                        STRV classLine = GetClassSignatureLine(child.content)
+                                        STRV specialWord = GetClassSpecialWord(child.content)
+                                        STRV templateLine = GetTemplateLine(child.content)
+                                        if (templateLine.len > 0)
+                                                templateLine.TrimLeft()
+                                                bundle += templateLine
+                                                bundle += '\n'
+                                        bundle += classLine
+                                        bundle += '\n'
+                                        bundle += "{\n"
+                                        for (NODE* child2 : child.children)
+                                                if (child2->kind == NODE_KIND::PREPROCESSOR)
+                                                        bundle += child2->content
+                                                        bundle += '\n'
+                                        EmitOrderedClasses(bundle, child)
+                                        for (NODE* child2 : child.children)
+                                                if (child2->kind != NODE_KIND::CLASS && child2->kind != NODE_KIND::PREPROCESSOR)
+                                                        bundle += child2->content
+                                                        bundle += ";\n"
+                                        bundle += "}"
+                                        if (specialWord.len > 0)
+                                                bundle += " "
+                                                bundle += specialWord
+                                        bundle += ";\n"
+                                        classes[i].emitted = TRUE
+                                        remaining -= 1
+                                        progress = TRUE
+
+                if (!progress)
+                        DSTR message = {}
+                        message += "failed to order class declarations because of a by-value dependency cycle. remaining classes="
+                        BOOL first = TRUE
+                        for (PENDING_CLASS& pending : classes)
+                                if (!pending.emitted)
+                                        if (!first)
+                                                message += ", "
+                                        message += pending.name
+                                        first = FALSE
+                        throw ERROR(DSTR, DstrHeap(message))
+
+        classes.Free()
+
+VOID MergeDeclBlocks(NODE& root)
+        DARR<NODE*> result = {}
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        NODE* existing = NULL
+                        for (NODE* r : result)
+                                if (r->kind == NODE_KIND::DECL_BLOCK && r->content == child->content)
+                                        existing = r
+                                        break
+                        if (existing != NULL)
+                                for (NODE* gc : child->children)
+                                        existing->children.PushR() = gc
+                                continue
+                        NODE* clone = (NODE*)calloc(1, sizeof(NODE))
+                        if (clone == NULL)
+                                throw ERROR(CSTR, "out of memory")
+                        clone->kind = child->kind
+                        clone->content = child->content
+                        clone->indent = child->indent
+                        for (NODE* gc : child->children)
+                                clone->children.PushR() = gc
+                        result.PushR() = clone
+                else
+                        result.PushR() = child
+        for (NODE* r : result)
+                if (r->kind == NODE_KIND::DECL_BLOCK)
+                        MergeDeclBlocks(*r)
+        root.children.Free()
+        root.children = result
+
+VOID EmitClassDeclarations(DSTR& bundle, NODE& root)
+        EmitOrderedClasses(bundle, root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitClassDeclarations)
+
+VOID EmitRootPreprocessor(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::PREPROCESSOR)
+                        bundle += child->content
+                        bundle += '\n'
+
+UW FindInitializer(STRV stmt)
+        IW paren = 0
+        IW brace = 0
+        IW bracket = 0
+        IW angle = 0
+        BOOL inString = FALSE
+        BOOL inChar = FALSE
+        BOOL escaped = FALSE
+        for (UW i = 0; i < stmt.len; i += 1)
+                C8 c = stmt[i]
+                if (escaped)
+                        escaped = FALSE
+                        continue
+                if (inString)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (c == '"')
+                                inString = FALSE
+                        continue
+                if (inChar)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (c == '\'')
+                                inChar = FALSE
+                        continue
+                if (c == '"')
+                        inString = TRUE
+                else if (c == '\'')
+                        inChar = TRUE
+                else if (c == '(')
+                        paren += 1
+                else if (c == ')')
+                        paren -= 1
+                else if (c == '[')
+                        bracket += 1
+                else if (c == ']')
+                        bracket -= 1
+                else if (c == '<')
+                        angle += 1
+                else if (c == '>')
+                        if (angle > 0)
+                                angle -= 1
+                else if (paren == 0 && brace == 0 && bracket == 0 && angle == 0)
+                        if (c == '{')
+                                return i
+                        if (c == '=')
+                                C8 prev = i > 0 ? stmt[i - 1] : ' '
+                                C8 next = i + 1 < stmt.len ? stmt[i + 1] : ' '
+                                if (next != '=' && prev != '=' && prev != '!' && prev != '<' && prev != '>' && prev != '+' && prev != '-' && prev != '*' && prev != '/' && prev != '%' && prev != '&' && prev != '|' && prev != '^')
+                                        return i
+                else if (c == '{')
+                        brace += 1
+                else if (c == '}')
+                        brace -= 1
+        return stmt.len
+
+VOID EmitExternStatement(DSTR& bundle, STRV stmt)
+        stmt.Trim()
+        if (stmt.StartsWith("typedef ") || stmt.StartsWith("using ") || stmt.StartsWith("extern ") || stmt.StartsWith("static "))
+                bundle += stmt
+                bundle += ";\n"
+                return
+        UW cut = FindInitializer(stmt)
+        if (cut < stmt.len)
+                stmt.ShrinkRight(stmt.len - cut)
+                stmt.TrimRight()
+        bundle += "extern "
+        bundle += stmt
+        bundle += ";\n"
+
+VOID EmitRootStatements(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitRootStatements)
+                else if (child->kind == NODE_KIND::STATEMENT)
+                        if (HEADER_ONLY)
+                                EmitExternStatement(bundle, child->content)
+                        else
+                                bundle += child->content
+                                bundle += ";\n"
+
+VOID EmitFunctions(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitFunctions)
+                else if (child->kind == NODE_KIND::FUNCTION)
+                        if (!HEADER_ONLY || IsTemplate(child->content))
+                                bundle += child->content
+                                bundle += '\n'
+                                bundle += "{\n"
+                                EmitStmtList(bundle, *child)
+                                bundle += "}\n"
+
+VOID EmitClassMethods(DSTR& bundle, NODE& root)
+        for (NODE* child : root.children)
+                if (child->kind == NODE_KIND::DECL_BLOCK)
+                        EmitDeclBlock(bundle, *child, EmitClassMethods)
+                else if (child->kind == NODE_KIND::CLASS)
+                        for (NODE* child2 : child->children)
+                                if (child2->kind == NODE_KIND::FUNCTION)
+                                        EmitClassMethodSignature(bundle, *child, *child2)
+                                        bundle += '\n'
+                                        bundle += "{\n"
+                                        EmitStmtList(bundle, *child2)
+                                        bundle += "}\n"

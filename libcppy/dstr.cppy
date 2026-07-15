@@ -1,0 +1,77 @@
+struct DSTR : DARR<C8>
+        DSTR& operator+=(C8 c)
+                Reserve(1)
+                data[len] = c
+                len += 1
+                return *this
+
+        DSTR& operator+=(const C8* s)
+                UW slen = (UW)strlen(s)
+                Reserve(slen)
+                memcpy(data + len, s, slen)
+                len += slen
+                return *this
+
+        DSTR& operator+=(STRV s)
+                Reserve(s.len)
+                memcpy(data + len, s.start, s.len)
+                len += s.len
+                return *this
+
+        DSTR& operator+=(DSTR& s)
+                Reserve(s.len)
+                memcpy(data + len, s.data, s.len)
+                len += s.len
+                return *this
+
+        DSTR& operator+=(U32 n)
+                C8 buf[16]
+                int written = snprintf(buf, sizeof(buf), "%u", (unsigned)n)
+                if (written < 0)
+                        throw ERROR(CSTR, "snprintf failed")
+                Reserve((UW)written)
+                memcpy(data + len, buf, (UW)written)
+                len += (UW)written
+                return *this
+
+        DSTR& operator+=(U64 n)
+                C8 buf[32]
+                int written = snprintf(buf, sizeof(buf), "%llu", (unsigned long long)n)
+                if (written < 0)
+                        throw ERROR(CSTR, "snprintf failed")
+                Reserve((UW)written)
+                memcpy(data + len, buf, (UW)written)
+                len += (UW)written
+                return *this
+
+        VOID Fill(STRV s)
+                len = 0
+                *this += s
+
+        VOID Fill(DSTR& s)
+                len = 0
+                *this += s
+
+        VOID Fill(const C8* p, UW slen)
+                len = 0
+                Reserve(slen)
+                memcpy(data, p, slen)
+                len = slen
+
+        DARR<STRV> Lines()
+                STRV view = {data, len}
+                return view.Lines()
+
+template <typename... ARGS>
+DSTR Dstr(ARGS... args)
+        DSTR d = {}
+        ((d += args), ...)
+        return d
+
+template <typename... ARGS>
+DSTR* DstrHeap(ARGS... args)
+        DSTR* d = (DSTR*)calloc(1, sizeof(DSTR))
+        if (d == NULL)
+                throw ERROR(CSTR, "out of memory")
+        ((*d += args), ...)
+        return d

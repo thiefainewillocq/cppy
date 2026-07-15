@@ -1,0 +1,19 @@
+/*
+    Every name here is used before it is defined, and nothing is forward
+    declared.
+*/
+
+int main()
+        GREETER greeter = {"world"}
+        greeter.Greet()
+        printf("2 + 3 = %d\n", Add(2, 3))
+        return 0
+
+int Add(int a, int b)
+        return a + b
+
+struct GREETER
+        const C8* name
+
+        VOID Greet()
+                printf("Hello, %s!\n", name)

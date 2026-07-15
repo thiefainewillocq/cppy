@@ -1,0 +1,18 @@
+/*
+    ENTITY points back at WORLD, defined in world.cppy, and reads its
+    fields from a method body. Neither file includes the other, because
+    there is nothing to include.
+*/
+
+struct ENTITY
+        WORLD* home
+        const C8* name
+        IW hp
+
+        VOID Hurt(IW amount)
+                hp -= amount
+                printf("[tick %zu] %s takes %ld damage, hp=%ld\n",
+                        (size_t)home->tick,
+                        name,
+                        (long)amount,
+                        (long)hp)

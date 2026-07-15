@@ -1,0 +1,45 @@
+enum class NODE_KIND
+        ROOT
+        PREPROCESSOR
+        DECL_BLOCK
+        CLASS
+        ENUM
+        FUNCTION
+        CONTROL_BLOCK
+        BLOCK
+        STATEMENT
+
+struct NODE
+        NODE_KIND kind
+        DARR<NODE*> children
+        STRV content
+        UW indent
+
+enum class ERROR_TYPE
+        COMMON_ERROR_TYPES
+        PARSE
+
+struct PARSE_ERROR
+        const C8* message
+        const C8* filename
+        UW line
+
+struct PARSED_FILE
+        const C8* filename
+        DSTR content
+        NODE root
+
+/* A class waiting for the ones it needs by value to be emitted first. */
+struct PENDING_CLASS
+        NODE* node
+        STRV name
+        BOOL emitted
+
+PARSE_ERROR* NEW_PARSE_ERROR(const C8* message, const C8* filename, UW line)
+        PARSE_ERROR* parseError = (PARSE_ERROR*)calloc(1, sizeof(PARSE_ERROR))
+        if (parseError == NULL)
+                throw ERROR(CSTR, "failed to allocate parse error")
+        parseError->message = message
+        parseError->filename = filename
+        parseError->line = line
+        return parseError

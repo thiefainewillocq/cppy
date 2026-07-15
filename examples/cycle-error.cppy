@@ -1,0 +1,20 @@
+/*
+    This example is meant to fail. Run it to see the diagnostic.
+
+    cppy orders declarations for you, but a by-value cycle is impossible
+    in any language: A cannot contain B while B contains A, because
+    neither has a size. So cppy stops and names the classes it could not
+    place, instead of letting the C++ compiler produce a wall of errors
+    about an incomplete type.
+
+    Make either member a pointer and the cycle is broken.
+*/
+
+struct A
+        B b
+
+struct B
+        A a
+
+int main()
+        return 0

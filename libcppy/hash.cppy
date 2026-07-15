@@ -1,0 +1,32 @@
+struct HASH64
+        U64 value
+
+        HASH64& operator+=(STRV s)
+                for (UW i = 0; i < s.len; i += 1)
+                        value = (value ^ (U64)(U8)s.start[i]) * 0x100000001b3ULL
+                return *this
+
+        HASH64& operator+=(DSTR& s)
+                for (UW i = 0; i < s.len; i += 1)
+                        value = (value ^ (U64)(U8)s.data[i]) * 0x100000001b3ULL
+                return *this
+
+        HASH64& operator+=(UW n)
+                for (UW i = 0; i < 8; i += 1)
+                        value = (value ^ ((n >> (i * 8)) & 0xFF)) * 0x100000001b3ULL
+                return *this
+
+template <typename... ARGS>
+HASH64 Hash64(ARGS... args)
+        HASH64 h = {0xcbf29ce484222325ULL}
+        ((h += args), ...)
+        return h
+
+template <typename... ARGS>
+HASH64* Hash64Heap(ARGS... args)
+        HASH64* h = (HASH64*)calloc(1, sizeof(HASH64))
+        if (h == NULL)
+                throw ERROR(CSTR, "out of memory")
+        h->value = 0xcbf29ce484222325ULL
+        ((*h += args), ...)
+        return h

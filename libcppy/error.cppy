@@ -1,0 +1,19 @@
+struct ERROR
+        ERROR_TYPE type
+        VOID* data
+
+#define COMMON_ERROR_TYPES CSTR, STRV, DSTR
+#define ERROR(TAG, VAL) (ERROR{ERROR_TYPE::TAG, (VOID*)(VAL)})
+#define HANDLE_COMMON_ERRORS \
+        case ERROR_TYPE::CSTR: \
+                fprintf(stderr, "Error: %s.\n", (C8*)error.data); \
+                break; \
+        case ERROR_TYPE::STRV: \
+                fprintf(stderr, "Error: %.*s.\n", (int)((STRV*)error.data)->len, ((STRV*)error.data)->start); \
+                free(error.data); \
+                break; \
+        case ERROR_TYPE::DSTR: \
+                fprintf(stderr, "Error: %.*s.\n", (int)((DSTR*)error.data)->len, ((DSTR*)error.data)->data); \
+                ((DSTR*)error.data)->Free(); \
+                free(error.data); \
+                break;

@@ -1,0 +1,89 @@
+template <typename V>
+struct MAP
+        struct BUCKET
+                U64 key
+                V value
+                U8 state
+
+        BUCKET* data
+        UW len
+        UW cap
+        UW used
+
+        VOID Reserve(UW extra)
+                if ((used + extra) * 2 <= cap)
+                        return
+                UW newCap = 16
+                while ((len + extra) * 2 > newCap)
+                        newCap *= 2
+                BUCKET* oldData = data
+                UW oldCap = cap
+                data = (BUCKET*)calloc(newCap, sizeof(BUCKET))
+                if (data == NULL)
+                        throw ERROR(CSTR, "out of memory")
+                cap = newCap
+                len = 0
+                used = 0
+                if (oldData)
+                        for (UW i = 0; i < oldCap; i += 1)
+                                if (oldData[i].state == 1)
+                                        SetR(oldData[i].key) = oldData[i].value
+                        free(oldData)
+
+        BOOL Has(U64 key)
+                if (cap == 0)
+                        return FALSE
+                UW idx = (UW)key & (cap - 1)
+                while (data[idx].state != 0)
+                        if (data[idx].state == 1 && data[idx].key == key)
+                                return TRUE
+                        idx = (idx + 1) & (cap - 1)
+                return FALSE
+
+        V& Get(U64 key)
+                UW idx = (UW)key & (cap - 1)
+                while (data[idx].state != 0)
+                        if (data[idx].state == 1 && data[idx].key == key)
+                                return data[idx].value
+                        idx = (idx + 1) & (cap - 1)
+                return data[idx].value
+
+        V& SetR(U64 key)
+                Reserve(1)
+                UW idx = (UW)key & (cap - 1)
+                UW tombstone = cap
+                while (data[idx].state != 0)
+                        if (data[idx].state == 1 && data[idx].key == key)
+                                return data[idx].value
+                        if (data[idx].state == 2 && tombstone == cap)
+                                tombstone = idx
+                        idx = (idx + 1) & (cap - 1)
+                if (tombstone != cap)
+                        idx = tombstone
+                else
+                        used += 1
+                data[idx].key = key
+                data[idx].state = 1
+                memset(&data[idx].value, 0, sizeof(V))
+                len += 1
+                return data[idx].value
+
+        VOID Remove(U64 key)
+                if (cap == 0)
+                        return
+                UW idx = (UW)key & (cap - 1)
+                while (data[idx].state != 0)
+                        if (data[idx].state == 1 && data[idx].key == key)
+                                data[idx].state = 2
+                                len -= 1
+                                return
+                        idx = (idx + 1) & (cap - 1)
+
+        VOID Reset()
+                data = NULL
+                len = 0
+                cap = 0
+                used = 0
+
+        VOID Free()
+                free(data)

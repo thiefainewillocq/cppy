@@ -1,0 +1,45 @@
+{
+        "name": "cppy",
+        "version": "0.0.1",
+        "icon": "cppy.png",
+        "engines": {
+                "vscode": "^1.85.0"
+        },
+        "contributes": {
+                "languages": [
+                        {
+                                "id": "cppy",
+                                "extensions": [".cppy"],
+                                "icon": {
+                                        "light": "./cppy.png",
+                                        "dark": "./cppy.png"
+                                }
+                        }
+                ],
+                "grammars": [
+                        {
+                                "language": "cppy",
+                                "scopeName": "source.cppy",
+                                "path": "./cppy.tmLanguage.json"
+                        }
+                ],
+                "configurationDefaults": {
+                        "editor.tokenColorCustomizations": {
+                                "textMateRules": [
+                                        { "scope": "source.cppy comment", "settings": { "foreground": "#7a7a7a", "fontStyle": "italic" } },
+                                        { "scope": "source.cppy string", "settings": { "foreground": "#bfffbf" } },
+                                        { "scope": "source.cppy constant.character", "settings": { "foreground": "#bfffbf" } },
+                                        { "scope": "source.cppy entity.name.header", "settings": { "foreground": "#bfffbf" } },
+                                        { "scope": "source.cppy keyword", "settings": { "foreground": "#dfbfff" } },
+                                        { "scope": "source.cppy storage.modifier", "settings": { "foreground": "#dfbfff" } },
+                                        { "scope": "source.cppy entity.name.function", "settings": { "foreground": "#ffffbf" } },
+                                        { "scope": "source.cppy entity.name.type, source.cppy entity.name.namespace, source.cppy support.type, source.cppy storage.type", "settings": { "foreground": "#cba679" } },
+                                        { "scope": "source.cppy constant.numeric, source.cppy constant.language", "settings": { "foreground": "#ffdfbf" } },
+                                        { "scope": "source.cppy variable", "settings": { "foreground": "#bfbfff" } },
+                                        { "scope": "source.cppy keyword.operator", "settings": { "foreground": "#999999" } },
+                                        { "scope": "source.cppy punctuation", "settings": { "foreground": "#999999" } }
+                                ]
+                        }
+                }
+        }
+}

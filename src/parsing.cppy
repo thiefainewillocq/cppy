@@ -1,0 +1,546 @@
+BOOL IsIdentChar(C8 c)
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+
+BOOL IsClassKeyword(STRV s)
+        return s.StartsWith("struct ") || s.StartsWith("class ") || s.StartsWith("union ") || s == "struct" || s == "class" || s == "union"
+
+UW SpanLen(STRV first, STRV last)
+        return (last.start + last.len) - first.start
+
+/*
+    Splits a class signature into the leading word a typedef or an
+    export macro may put in front of it, and the struct/class/union part
+    itself. A signature with nothing in front yields an empty word.
+*/
+VOID SplitClassSignature(STRV line, STRV& word, STRV& sig)
+        word = {}
+        sig = GetSignatureLine(line)
+        sig.TrimLeft()
+        if (sig.StartsWith("enum ") || IsClassKeyword(sig))
+                return
+
+        UW split = 0
+        while (split < sig.len && sig[split] != ' ')
+                split += 1
+
+        UW start = split
+        while (start < sig.len && sig[start] == ' ')
+                start += 1
+
+        STRV tail = sig
+        tail.ShrinkLeft(start)
+        if (!IsClassKeyword(tail))
+                return
+
+        word = sig
+        word.ShrinkRight(word.len - split)
+        sig = tail
+
+STRV GetClassSignatureLine(STRV line)
+        STRV word = {}
+        STRV sig = {}
+        SplitClassSignature(line, word, sig)
+        return sig
+
+STRV GetClassSpecialWord(STRV line)
+        STRV word = {}
+        STRV sig = {}
+        SplitClassSignature(line, word, sig)
+        return word
+
+BOOL IsDeclBlock(STRV line)
+        return line.StartsWith("namespace") || line == "extern \"C\""
+BOOL IsPreprocessor(STRV line)
+        return line.StartsWith("#")
+BOOL IsClass(STRV line)
+        STRV classLine = GetClassSignatureLine(line)
+        return IsClassKeyword(classLine)
+BOOL IsEnum(STRV line)
+        return line.StartsWith("enum")
+BOOL IsControlBlock(STRV line)
+        return line.StartsWith("if ") || line.StartsWith("if(") || line.StartsWith("for ") || line.StartsWith("for(") || line.StartsWith("while ") || line.StartsWith("while(") || line.StartsWith("switch ") || line.StartsWith("switch(") || line.StartsWith("catch ") || line.StartsWith("catch(") || line == "try" || line.StartsWith("try ") || line == "else" || line.StartsWith("else ") || line.StartsWith("else if ") || line.StartsWith("else if(")
+BOOL IsTemplate(STRV line)
+        return line.StartsWith("template ") || line.StartsWith("template<")
+BOOL IsDeclScope(NODE_KIND kind)
+        return kind == NODE_KIND::ROOT || kind == NODE_KIND::DECL_BLOCK
+BOOL StartsWithKeyword(STRV line, const C8* word)
+        UW len = (UW)strlen(word)
+        if (!(len <= line.len && memcmp(line.start, word, len) == 0))
+                return FALSE
+        return len == line.len || !IsIdentChar(line[len])
+BOOL IsFunction(STRV line)
+        while (TRUE)
+                if (line.StartsWith("extern \"C\" "))
+                        line.ShrinkLeft(11)
+                else if (line.StartsWith("static "))
+                        line.ShrinkLeft(7)
+                else
+                        break
+
+        IW depth = 0
+        UW paren = line.len
+        for (UW i = 0; i < line.len; i += 1)
+                if (line[i] == '(')
+                        if (depth == 0)
+                                UW inner = i + 1
+                                while (inner < line.len && line[inner] == ' ')
+                                        inner += 1
+                                if (inner < line.len && (line[inner] == '*' || line[inner] == '&'))
+                                        depth += 1
+                                        continue
+
+                                UW nameEnd = i
+                                while (nameEnd > 0 && line[nameEnd - 1] == ' ')
+                                        nameEnd -= 1
+                                if (nameEnd == 0)
+                                        depth += 1
+                                        continue
+
+                                UW tokenStart = nameEnd
+                                while (tokenStart > 0 && line[tokenStart - 1] != ' ')
+                                        tokenStart -= 1
+
+                                STRV name = line
+                                name.ShrinkRight(name.len - nameEnd)
+                                name.ShrinkLeft(tokenStart)
+                                if ((name.len > 0 && ((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z') || name[0] == '_' || name[0] == '~')) || name.StartsWith("operator"))
+                                        paren = i
+
+                                depth += 1
+                                if (paren != line.len)
+                                        break
+                        else
+                                depth += 1
+                else if (line[i] == ')')
+                        if (depth > 0)
+                                depth -= 1
+        if (paren == line.len)
+                return FALSE
+
+        UW closeParen = paren
+        while (closeParen < line.len && line[closeParen] != ')')
+                closeParen += 1
+        if (closeParen < line.len)
+                for (UW i = closeParen + 1; i < line.len; i += 1)
+                        if (line[i] == '=')
+                                return FALSE
+
+        UW nameStart = paren
+        while (nameStart > 0 && line[nameStart - 1] != ' ')
+                nameStart -= 1
+
+        STRV prefix = line
+        prefix.ShrinkRight(prefix.len - nameStart)
+        prefix.TrimRight()
+        if (prefix.len == 0)
+                return FALSE
+        if (StartsWithKeyword(prefix, "return") || StartsWithKeyword(prefix, "throw") || StartsWithKeyword(prefix, "co_return"))
+                return FALSE
+        BOOL hasOperator = FALSE
+        for (UW i = 0; i + 8 <= prefix.len; i += 1)
+                if (memcmp(prefix.start + i, "operator", 8) == 0)
+                        hasOperator = TRUE
+                        break
+        if (!hasOperator)
+                for (UW i = 0; i < prefix.len; i += 1)
+                        if (prefix[i] == '=')
+                                return FALSE
+        if (prefix.EndsWith(".") || prefix.EndsWith("->"))
+                return FALSE
+        return TRUE
+
+UW GetIndent(STRV line)
+        UW indent = 0
+        while (indent < line.len && line[indent] == ' ')
+                indent += 1
+        return indent
+
+BOOL EndsWithAndOrOr(STRV line)
+        return line.EndsWith("&&") || line.EndsWith("||") || line.EndsWith("|")
+
+BOOL EndsWithComma(STRV line)
+        return line.EndsWith(",")
+BOOL EndsWithBackslash(STRV line)
+        return line.EndsWith("\\")
+
+VOID GetGroupingDepths(STRV line, IW& parenDepth, IW& braceDepth, IW& bracketDepth)
+        parenDepth = 0
+        braceDepth = 0
+        bracketDepth = 0
+
+        BOOL inString = FALSE
+        BOOL inChar = FALSE
+        BOOL escaped = FALSE
+        for (C8 c : line)
+                if (escaped)
+                        escaped = FALSE
+                        continue
+
+                if (inString)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (c == '"')
+                                inString = FALSE
+                        continue
+
+                if (inChar)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (c == '\'')
+                                inChar = FALSE
+                        continue
+
+                if (c == '"')
+                        inString = TRUE
+                else if (c == '\'')
+                        inChar = TRUE
+                else if (c == '(')
+                        parenDepth += 1
+                else if (c == ')')
+                        parenDepth -= 1
+                else if (c == '{')
+                        braceDepth += 1
+                else if (c == '}')
+                        braceDepth -= 1
+                else if (c == '[')
+                        bracketDepth += 1
+                else if (c == ']')
+                        bracketDepth -= 1
+
+STRV FirstLine(STRV line)
+        IW newline = line.Find('\n')
+        if (newline >= 0)
+                line.ShrinkRight(line.len - (UW)newline)
+        if (line.len > 0 && line[line.len - 1] == '\r')
+                line.ShrinkRight(1)
+        return line
+
+STRV GetSignatureLine(STRV line)
+        STRV trimmed = line
+        trimmed.TrimLeft()
+        if (!trimmed.StartsWith("template"))
+                return line
+
+        IW newline = line.Find('\n')
+        if (newline < 0)
+                return {}
+        line.ShrinkLeft((UW)newline + 1)
+        return FirstLine(line)
+
+STRV GetTemplateLine(STRV line)
+        STRV trimmed = line
+        trimmed.TrimLeft()
+        if (!trimmed.StartsWith("template"))
+                return {}
+        return FirstLine(line)
+
+STRV GetTypeName(STRV line)
+        UW start = 0
+        if (line.StartsWith("struct "))
+                start = 7
+        else if (line == "struct")
+                start = 6
+        else if (line.StartsWith("class "))
+                start = 6
+        else if (line.StartsWith("union "))
+                start = 6
+        else if (line == "union")
+                start = 5
+        else if (line.StartsWith("enum "))
+                start = 5
+
+        UW end = start
+        while (end < line.len && IsIdentChar(line[end]))
+                end += 1
+
+        line.ShrinkRight(line.len - end)
+        line.ShrinkLeft(start)
+        return line
+
+DSTR GetTemplateArgs(STRV line)
+        DSTR args = {}
+        args += '<'
+        BOOL first = TRUE
+        for (UW i = 0; i < line.len; i += 1)
+                UW kw = 0
+                if (i + 8 <= line.len && memcmp(line.start + i, "typename", 8) == 0)
+                        kw = 8
+                else if (i + 5 <= line.len && memcmp(line.start + i, "class", 5) == 0)
+                        kw = 5
+
+                if (kw == 0)
+                        continue
+
+                i += kw
+                while (i < line.len && line[i] == ' ')
+                        i += 1
+
+                BOOL pack = i + 3 <= line.len && memcmp(line.start + i, "...", 3) == 0
+                if (pack)
+                        i += 3
+                        while (i < line.len && line[i] == ' ')
+                                i += 1
+
+                UW start = i
+                while (i < line.len && IsIdentChar(line[i]))
+                        i += 1
+
+                if (start == i)
+                        continue
+
+                if (!first)
+                        args += ", "
+                if (pack)
+                        args += "..."
+                STRV arg = line
+                arg.ShrinkRight(arg.len - i)
+                arg.ShrinkLeft(start)
+                args += arg
+                first = FALSE
+        args += '>'
+        return args
+
+VOID SetNodeContent(NODE* node, STRV first, STRV last)
+        node->content = first
+        node->content.len = SpanLen(first, last)
+
+STRV MergedLine(DARR<STRV>& lines, UW firstI, UW lastI)
+        STRV line = lines[firstI]
+        line.len = SpanLen(lines[firstI], lines[lastI])
+        line.Trim()
+        return line
+
+VOID AttachChild(DARR<NODE*>& stack, NODE* node)
+        stack.Last()->children.PushR() = node
+
+VOID AttachScope(DARR<NODE*>& stack, NODE* node)
+        stack.Last()->children.PushR() = node
+        stack.PushR() = node
+
+/*
+    Overwrites every comment with spaces, in place, before anything else
+    looks at the file. Newlines are kept so line numbers and spans still
+    line up, and a comment inside a string literal is left alone.
+
+    Doing this up front is what makes a trailing comment harmless: the
+    statement it follows still ends with the comma or && that continues
+    it, and the semicolon appended at emission still lands on the code
+    rather than inside the comment.
+*/
+VOID StripComments(DSTR& content)
+        BOOL inString = FALSE
+        BOOL inChar = FALSE
+        BOOL escaped = FALSE
+        UW i = 0
+        while (i < content.len)
+                C8 c = content.data[i]
+                if (escaped)
+                        escaped = FALSE
+                        i += 1
+                        continue
+
+                if (inString || inChar)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (inString && c == '"')
+                                inString = FALSE
+                        else if (inChar && c == '\'')
+                                inChar = FALSE
+                        i += 1
+                        continue
+
+                if (c == '"')
+                        inString = TRUE
+                        i += 1
+                        continue
+
+                if (c == '\'')
+                        inChar = TRUE
+                        i += 1
+                        continue
+
+                if (c != '/' || i + 1 >= content.len)
+                        i += 1
+                        continue
+
+                if (content.data[i + 1] == '/')
+                        while (i < content.len && content.data[i] != '\n')
+                                content.data[i] = ' '
+                                i += 1
+                        continue
+
+                if (content.data[i + 1] == '*')
+                        content.data[i] = ' '
+                        content.data[i + 1] = ' '
+                        i += 2
+                        while (i < content.len)
+                                BOOL end = content.data[i] == '*' && i + 1 < content.len && content.data[i + 1] == '/'
+                                if (end)
+                                        content.data[i] = ' '
+                                        content.data[i + 1] = ' '
+                                        i += 2
+                                        break
+                                if (content.data[i] != '\n')
+                                        content.data[i] = ' '
+                                i += 1
+                        continue
+
+                i += 1
+
+NODE Parse(DSTR& content, const C8* filename)
+        NODE root = {}
+        root.kind = NODE_KIND::ROOT
+
+        StripComments(content)
+
+        DARR<NODE*> stack = {}
+        stack.PushR() = &root
+
+        DARR<STRV> lines = content.Lines()
+        UW i = 0
+        while (i < lines.len)
+                UW firstI = i
+                STRV line = lines[i]
+                line.Trim()
+                if (line.len == 0)
+                        i += 1
+                        continue
+
+                UW lastI = i
+                while (TRUE)
+                        BOOL extend = FALSE
+                        IW parenDepth
+                        IW braceDepth
+                        IW bracketDepth
+                        GetGroupingDepths(line, parenDepth, braceDepth, bracketDepth)
+                        if (parenDepth > 0 || braceDepth > 0 || bracketDepth > 0)
+                                while ((parenDepth > 0 || braceDepth > 0 || bracketDepth > 0) && lastI + 1 < lines.len)
+                                        lastI += 1
+                                        STRV next = lines[lastI]
+                                        IW nextParenDepth
+                                        IW nextBraceDepth
+                                        IW nextBracketDepth
+                                        GetGroupingDepths(next, nextParenDepth, nextBraceDepth, nextBracketDepth)
+                                        parenDepth += nextParenDepth
+                                        braceDepth += nextBraceDepth
+                                        bracketDepth += nextBracketDepth
+                                line = MergedLine(lines, firstI, lastI)
+                                if (parenDepth > 0 || braceDepth > 0 || bracketDepth > 0 || lastI + 1 >= lines.len)
+                                        break
+                                continue
+                        else if (EndsWithAndOrOr(line))
+                                extend = TRUE
+                        else if (EndsWithComma(line))
+                                extend = TRUE
+                        else if (EndsWithBackslash(line))
+                                extend = TRUE
+
+                        if (!extend || lastI + 1 >= lines.len)
+                                break
+
+                        lastI += 1
+                        line = MergedLine(lines, firstI, lastI)
+                line = MergedLine(lines, firstI, lastI)
+
+                NODE* node = (NODE*)calloc(1, sizeof(NODE))
+                if (node == NULL)
+                        throw ERROR(CSTR, "out of memory")
+                node->indent = GetIndent(lines[firstI])
+
+                while (stack.len > 1 && node->indent <= stack.Last()->indent)
+                        stack.Pop()
+                if (stack.Last()->kind != NODE_KIND::ROOT && node->indent <= stack.Last()->indent)
+                        throw ERROR(PARSE, NEW_PARSE_ERROR("a child must be more indented than its parent", filename, i + 1))
+
+                if (stack.Last()->children.len > 0)
+                        NODE* prev = stack.Last()->children.Last()
+                        if (prev->kind == NODE_KIND::STATEMENT && node->indent > prev->indent)
+                                NODE* block = (NODE*)calloc(1, sizeof(NODE))
+                                if (block == NULL)
+                                        throw ERROR(CSTR, "out of memory")
+                                block->kind = NODE_KIND::BLOCK
+                                block->indent = prev->indent
+                                stack.Last()->children.PushR() = block
+                                stack.PushR() = block
+
+                if (IsDeclBlock(line))
+                        if (!IsDeclScope(stack.Last()->kind))
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("namespace and extern \"C\" are only allowed at root or inside a namespace or extern \"C\"", filename, i + 1))
+                        node->kind = NODE_KIND::DECL_BLOCK
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachScope(stack, node)
+                        i = lastI + 1
+                else if (IsPreprocessor(line))
+                        node->kind = NODE_KIND::PREPROCESSOR
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachChild(stack, node)
+                        i = lastI + 1
+                else if (IsClass(line))
+                        if (!IsDeclScope(stack.Last()->kind) && stack.Last()->kind != NODE_KIND::CLASS)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("class is only allowed at root, inside a namespace, or inside a class", filename, i + 1))
+                        node->kind = NODE_KIND::CLASS
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachScope(stack, node)
+                        i = lastI + 1
+                else if (IsEnum(line))
+                        if (!IsDeclScope(stack.Last()->kind) && stack.Last()->kind != NODE_KIND::CLASS)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("enum is only allowed at root, inside a namespace, or inside a class", filename, i + 1))
+                        node->kind = NODE_KIND::ENUM
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachScope(stack, node)
+                        i = lastI + 1
+                else if (IsControlBlock(line))
+                        if (stack.Last()->kind != NODE_KIND::FUNCTION && stack.Last()->kind != NODE_KIND::CONTROL_BLOCK && stack.Last()->kind != NODE_KIND::BLOCK)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("function-like is only allowed inside a function, function-like, or block", filename, i + 1))
+                        node->kind = NODE_KIND::CONTROL_BLOCK
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachScope(stack, node)
+                        i = lastI + 1
+                else if (IsTemplate(line))
+                        i = lastI + 1
+                        if (i >= lines.len)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("template must be followed by a class or function", filename, i))
+
+                        STRV next = lines[i]
+                        next.Trim()
+                        if (next.len == 0)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("template must be followed by a class or function", filename, i + 1))
+                        UW indent2 = GetIndent(lines[i])
+                        if (indent2 != node->indent)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("template must be followed by a declaration at the same indentation", filename, i + 1))
+
+                        SetNodeContent(node, lines[firstI], lines[i])
+                        if (IsClass(next))
+                                if (!IsDeclScope(stack.Last()->kind) && stack.Last()->kind != NODE_KIND::CLASS)
+                                        throw ERROR(PARSE, NEW_PARSE_ERROR("class is only allowed at root, inside a namespace, or inside a class", filename, i + 1))
+                                node->kind = NODE_KIND::CLASS
+                                AttachScope(stack, node)
+                                i += 1
+                        else if (IsEnum(next))
+                                if (!IsDeclScope(stack.Last()->kind) && stack.Last()->kind != NODE_KIND::CLASS)
+                                        throw ERROR(PARSE, NEW_PARSE_ERROR("enum is only allowed at root, inside a namespace, or inside a class", filename, i + 1))
+                                node->kind = NODE_KIND::ENUM
+                                AttachScope(stack, node)
+                                i += 1
+                        else if (IsFunction(next))
+                                if (!IsDeclScope(stack.Last()->kind) && stack.Last()->kind != NODE_KIND::CLASS)
+                                        throw ERROR(PARSE, NEW_PARSE_ERROR("function is only allowed at root, inside a namespace, or inside a class", filename, i + 1))
+                                node->kind = NODE_KIND::FUNCTION
+                                AttachScope(stack, node)
+                                i += 1
+                        else
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("template must be followed by a class or function", filename, i + 1))
+                else if (IsFunction(line))
+                        if (!IsDeclScope(stack.Last()->kind) && stack.Last()->kind != NODE_KIND::CLASS)
+                                throw ERROR(PARSE, NEW_PARSE_ERROR("function is only allowed at root, inside a namespace, or inside a class", filename, i + 1))
+                        node->kind = NODE_KIND::FUNCTION
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachScope(stack, node)
+                        i = lastI + 1
+                else
+                        node->kind = NODE_KIND::STATEMENT
+                        SetNodeContent(node, lines[firstI], lines[lastI])
+                        AttachChild(stack, node)
+                        i = lastI + 1
+
+        return root

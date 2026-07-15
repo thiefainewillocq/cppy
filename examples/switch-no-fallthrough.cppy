@@ -1,0 +1,41 @@
+/*
+    cppy closes every case with a break, so accidental fallthrough cannot
+    be expressed and `break` never appears in cppy source.
+
+    Count below prints "zero one many", not "zero one many one many many".
+*/
+
+enum class SIGNAL
+        RED
+        AMBER
+        GREEN
+
+const C8* Describe(SIGNAL signal)
+        switch (signal)
+                case SIGNAL::RED:
+                        return "stop"
+                case SIGNAL::AMBER:
+                        return "slow down"
+                case SIGNAL::GREEN:
+                        return "go"
+        return "unknown"
+
+VOID Count(int n)
+        switch (n)
+                case 0:
+                        printf("zero ")
+                case 1:
+                        printf("one ")
+                default:
+                        printf("many ")
+
+int main()
+        printf("%s / %s / %s\n",
+                Describe(SIGNAL::RED),
+                Describe(SIGNAL::AMBER),
+                Describe(SIGNAL::GREEN))
+
+        for (int i = 0; i < 3; i += 1)
+                Count(i)
+        printf("\n")
+        return 0
