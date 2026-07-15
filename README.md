@@ -5,6 +5,10 @@ No braces, semicolons, or any ordering relevance.
 
 Experimental!
 
+![The same program in C++ and in cppy](assets/comparison.png)
+
+The same program twice. C++ on the left, CPPY on the right.
+
 # Usage
 
 ```sh
@@ -18,15 +22,7 @@ To build the `cppy-unstable` binary from the current source, use `build.sh`.
 
 - Indentation opens a scope
 - Semicolons are auto-inserted
-- Ordering is bypassed by building a naive tree of the code and emitting in phases into a single bundle.cpp;
-
-1. Class forward references
-2. Enums
-3. Function signatures
-4. Globals
-5. Class declarations without method definitions
-6. Function and method definitions
-
+- Ordering is bypassed by building a naive tree of the code and emitting in phases into a single `bundle.cpp`
 - Incomplete types are resolved to the extent permitted by C++
 - Switches auto-break
 - Indentation is spaces only
@@ -41,6 +37,8 @@ To build the `cppy-unstable` binary from the current source, use `build.sh`.
 - `#` lines are all emitted first, so a conditional can't wrap a declaration, put those in a `.hpp` and `-H` it
 
 # Header Mode
+
+Produce a header file instead of a binary.
 
 ```sh
 ./cppy program.cppy -o bundle.hpp --header
