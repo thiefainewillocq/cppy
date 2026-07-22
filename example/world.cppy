@@ -1,0 +1,26 @@
+struct ENTITY
+        WORLD* home
+        const C8* name
+        IW hp
+
+        VOID Hurt(IW amount)
+                hp -= amount
+                LOG("[tick %zu] %s takes %ld\n",
+                        (size_t)home->tick,
+                        name,
+                        (long)amount)
+
+struct WORLD
+        DARR<ENTITY> entities
+        UW tick
+
+        VOID Spawn(const C8* name, IW hp)
+                ENTITY& entity = entities.PushR()
+                entity.home = this
+                entity.name = name
+                entity.hp = hp
+
+        VOID Step()
+                tick += 1
+                for (ENTITY& entity : entities)
+                        entity.Hurt(1)

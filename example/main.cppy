@@ -1,0 +1,39 @@
+enum class ERROR_TYPE
+        COMMON_ERROR_TYPES
+
+int main()
+        try
+                WORLD world = {}
+                world.Spawn("goblin", 3)
+                world.Spawn("troll", 5)
+
+                world.Step()
+                world.Step()
+
+                IW best = 0
+                for (ENTITY& entity : world.entities)
+                        best = Max(best, entity.hp)
+                        printf("%s hp=%ld (%s)\n",
+                                entity.name,
+                                (long)entity.hp,
+                                Status(entity.hp))
+
+                printf("%zu ticks, best hp=%ld\n", (size_t)world.tick, (long)best)
+                world.entities.Free()
+                return 0
+        catch (ERROR& error)
+                switch (error.type)
+                        HANDLE_COMMON_ERRORS
+                return 1
+
+template <typename T>
+T Max(T a, T b)
+        return a > b ? a : b
+
+const C8* Status(IW hp)
+        switch (hp)
+                case 0:
+                        return "dead"
+                case 1:
+                        return "wounded"
+        return "fine"
