@@ -106,11 +106,105 @@ VOID EmitIndent(DSTR& bundle, UW indent)
         for (UW i = 0; i < indent; i += 1)
                 bundle += ' '
 
+/*
+    TRUE only when s opens with a paren that closes on its very last
+    character, so the whole clause is already wrapped. String and char
+    literals are skipped so a stray '(' or ')' inside them does not throw
+    the depth off.
+*/
+BOOL IsFullyParenthesized(STRV s)
+        if (s.len < 2 || s[0] != '(')
+                return FALSE
+
+        IW depth = 0
+        BOOL inString = FALSE
+        BOOL inChar = FALSE
+        BOOL escaped = FALSE
+        for (UW i = 0; i < s.len; i += 1)
+                C8 c = s[i]
+                if (escaped)
+                        escaped = FALSE
+                        continue
+                if (inString)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (c == '"')
+                                inString = FALSE
+                        continue
+                if (inChar)
+                        if (c == '\\')
+                                escaped = TRUE
+                        else if (c == '\'')
+                                inChar = FALSE
+                        continue
+
+                if (c == '"')
+                        inString = TRUE
+                else if (c == '\'')
+                        inChar = TRUE
+                else if (c == '(')
+                        depth += 1
+                else if (c == ')')
+                        depth -= 1
+                        if (depth == 0)
+                                return i == s.len - 1
+        return FALSE
+
+/*
+    Emits a control block's head, adding the parentheses C++ requires
+    around the clause when the source left them off. `if Hello()` becomes
+    `if (Hello())`, while an already-parenthesized `if (x)` is passed
+    through untouched. Clause-less keywords (else, try) are emitted as is.
+    Leading indentation is preserved since content carries its own.
+*/
+VOID EmitControlHead(DSTR& bundle, STRV content)
+        UW indent = GetIndent(content)
+        STRV body = content
+        body.ShrinkLeft(indent)
+        body.TrimRight()
+        EmitIndent(bundle, indent)
+
+        UW keyLen = 0
+        if (body.StartsWith("else if"))
+                keyLen = 7
+        else if (body.StartsWith("if"))
+                keyLen = 2
+        else if (body.StartsWith("for"))
+                keyLen = 3
+        else if (body.StartsWith("while"))
+                keyLen = 5
+        else if (body.StartsWith("switch"))
+                keyLen = 6
+        else if (body.StartsWith("catch"))
+                keyLen = 5
+        else
+                bundle += body
+                return
+
+        STRV keyword = body
+        keyword.ShrinkRight(keyword.len - keyLen)
+
+        STRV clause = body
+        clause.ShrinkLeft(keyLen)
+        clause.Trim()
+        if (clause.len == 0)
+                bundle += keyword
+                return
+
+        bundle += keyword
+        if (IsFullyParenthesized(clause))
+                bundle += ' '
+                bundle += clause
+        else
+                bundle += " ("
+                bundle += clause
+                bundle += ')'
+
 VOID EmitStmtList(DSTR& bundle, NODE& root)
         for (UW i = 0; i < root.children.len; i += 1)
                 NODE* child = root.children[i]
                 if (child->kind == NODE_KIND::CONTROL_BLOCK)
-                        bundle += child->content
+                        EmitControlHead(bundle, child->content)
                         bundle += '\n'
                         EmitIndent(bundle, child->indent)
                         bundle += "{\n"
