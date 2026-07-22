@@ -22,6 +22,7 @@ To build the `cppy-unstable` binary from the current source, use `build.sh`.
 
 - Indentation opens a scope
 - Semicolons are auto-inserted
+- Parentheses around a control clause are optional, `if x == y` is `if (x == y)`
 - Ordering is bypassed by building a naive tree of the code and emitting in phases into a single `bundle.cpp`
 - Multiple `.cppy` files are passed together and bundled as one; there is nothing to include and the order they are listed in does not matter
 - Incomplete types are resolved to the extent permitted by C++
