@@ -106,12 +106,6 @@ VOID EmitIndent(DSTR& bundle, UW indent)
         for (UW i = 0; i < indent; i += 1)
                 bundle += ' '
 
-/*
-    TRUE only when s opens with a paren that closes on its very last
-    character, so the whole clause is already wrapped. String and char
-    literals are skipped so a stray '(' or ')' inside them does not throw
-    the depth off.
-*/
 BOOL IsFullyParenthesized(STRV s)
         if (s.len < 2 || s[0] != '(')
                 return FALSE
@@ -150,13 +144,6 @@ BOOL IsFullyParenthesized(STRV s)
                                 return i == s.len - 1
         return FALSE
 
-/*
-    Emits a control block's head, adding the parentheses C++ requires
-    around the clause when the source left them off. `if Hello()` becomes
-    `if (Hello())`, while an already-parenthesized `if (x)` is passed
-    through untouched. Clause-less keywords (else, try) are emitted as is.
-    Leading indentation is preserved since content carries its own.
-*/
 VOID EmitControlHead(DSTR& bundle, STRV content)
         UW indent = GetIndent(content)
         STRV body = content

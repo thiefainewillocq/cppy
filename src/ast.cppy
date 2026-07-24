@@ -29,7 +29,6 @@ struct PARSED_FILE
         DSTR content
         NODE root
 
-/* A class waiting for the ones it needs by value to be emitted first. */
 struct PENDING_CLASS
         NODE* node
         STRV name

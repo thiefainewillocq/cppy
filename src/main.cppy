@@ -97,11 +97,6 @@ int main(int argc, C8** argv)
                 EmitPhase(bundle, files, "EmitEnums", EmitEnums)
                 EmitPhase(bundle, files, "EmitFunctionSignatures", EmitFunctionSignatures)
 
-                /*
-                    Classes are the one phase that cannot run per file: they
-                    are ordered by dependency, and the dependencies cross
-                    file boundaries.
-                */
                 bundle += "\n// EmitClassDeclarations\n"
                 NODE mergedRoot = {}
                 mergedRoot.kind = NODE_KIND::ROOT

@@ -7,11 +7,6 @@ BOOL IsClassKeyword(STRV s)
 UW SpanLen(STRV first, STRV last)
         return (last.start + last.len) - first.start
 
-/*
-    Splits a class signature into the leading word a typedef or an
-    export macro may put in front of it, and the struct/class/union part
-    itself. A signature with nothing in front yields an empty word.
-*/
 VOID SplitClassSignature(STRV line, STRV& word, STRV& sig)
         word = {}
         sig = GetSignatureLine(line)
@@ -317,16 +312,7 @@ VOID AttachScope(DARR<NODE*>& stack, NODE* node)
         stack.Last()->children.PushR() = node
         stack.PushR() = node
 
-/*
-    Overwrites every comment with spaces, in place, before anything else
-    looks at the file. Newlines are kept so line numbers and spans still
-    line up, and a comment inside a string literal is left alone.
 
-    Doing this up front is what makes a trailing comment harmless: the
-    statement it follows still ends with the comma or && that continues
-    it, and the semicolon appended at emission still lands on the code
-    rather than inside the comment.
-*/
 VOID StripComments(DSTR& content)
         BOOL inString = FALSE
         BOOL inChar = FALSE
